@@ -349,17 +349,22 @@ def compute_wall_mid(prices_df: pd.DataFrame) -> pd.DataFrame:
     df["ask_wall_price"] = ask_wall_p
     df["ask_wall_volume"] = ask_wall_v
 
-    # Wall Mid: average of bid wall and ask wall, with fallbacks
+    # Wall Mid: average of bid wall and ask wall.
+    # Only compute from rows where both sides have data; forward-fill gaps
+    # so one-sided snapshots don't snap wall_mid to an extreme.
     both = ~np.isnan(bid_wall_p) & ~np.isnan(ask_wall_p)
-    only_bid = ~np.isnan(bid_wall_p) & np.isnan(ask_wall_p)
-    only_ask = np.isnan(bid_wall_p) & ~np.isnan(ask_wall_p)
+    wall_mid = np.where(both, (bid_wall_p + ask_wall_p) / 2, np.nan)
+    df["wall_mid"] = pd.Series(wall_mid).ffill().bfill().values
+    df["wall_mid"] = df["wall_mid"].fillna(df["mid_price"].replace(0, np.nan))
 
-    wall_mid = np.where(
-        both, (bid_wall_p + ask_wall_p) / 2,
-        np.where(only_bid, bid_wall_p,
-                 np.where(only_ask, ask_wall_p, df["mid_price"].values))
+    # Clamp to BBO range so wall_mid never falls outside the visible spread
+    best_bid = df["bid_price_1"].values
+    best_ask = df["ask_price_1"].values
+    has_both_bbo = ~np.isnan(best_bid) & ~np.isnan(best_ask)
+    wm = df["wall_mid"].values
+    df["wall_mid"] = np.where(
+        has_both_bbo, np.clip(wm, best_bid, best_ask), wm
     )
-    df["wall_mid"] = wall_mid
 
     return df
 
@@ -385,7 +390,7 @@ def compute_raw_mid(prices_df: pd.DataFrame) -> pd.DataFrame:
     df = prices_df.copy()
     df["raw_mid"] = (df["bid_price_1"] + df["ask_price_1"]) / 2
     # If one side is missing, fall back to the available side or mid_price
-    df["raw_mid"] = df["raw_mid"].fillna(df["mid_price"])
+    df["raw_mid"] = df["raw_mid"].fillna(df["mid_price"].replace(0, np.nan))
     return df
 
 
@@ -489,3 +494,54 @@ def merge_trades_with_prices(
         suffixes=("", "_book"),
     )
     return merged
+
+
+# ---------------------------------------------------------------------------
+# CSV discovery for dynamic file selection
+# ---------------------------------------------------------------------------
+
+def discover_csv_files(root: Optional[Path] = None) -> dict:
+    """
+    Scan the project for CSV files that look like price or trade data.
+
+    Returns a dict keyed by relative directory path, with values being dicts
+    of ``{"prices": [filenames], "trades": [filenames]}``.
+    """
+    if root is None:
+        root = _PROJECT_ROOT
+    result = {}
+    for csv_path in sorted(root.rglob("*.csv")):
+        if ".venv" in csv_path.parts or "node_modules" in csv_path.parts:
+            continue
+        name = csv_path.name.lower()
+        if "price" not in name and "trade" not in name:
+            continue
+        rel_dir = str(csv_path.parent.relative_to(root))
+        entry = result.setdefault(rel_dir, {"prices": [], "trades": []})
+        if "price" in name:
+            entry["prices"].append(csv_path.name)
+        elif "trade" in name:
+            entry["trades"].append(csv_path.name)
+    return result
+
+
+def load_csv_prices(filepath: Path, product: Optional[str] = None) -> pd.DataFrame:
+    """Load a prices CSV by absolute path (semicolon-separated)."""
+    df = pd.read_csv(filepath, sep=";")
+    for col in df.columns:
+        if "price" in col or "volume" in col or col in ("mid_price", "profit_and_loss"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if product is not None and "product" in df.columns:
+        df = df[df["product"] == product].reset_index(drop=True)
+    return df
+
+
+def load_csv_trades(filepath: Path, product: Optional[str] = None) -> pd.DataFrame:
+    """Load a trades CSV by absolute path (semicolon-separated)."""
+    df = pd.read_csv(filepath, sep=";")
+    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
+    if product is not None:
+        col = "symbol" if "symbol" in df.columns else "product"
+        df = df[df[col] == product].reset_index(drop=True)
+    return df

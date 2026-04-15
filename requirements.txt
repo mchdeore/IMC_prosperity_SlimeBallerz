@@ -1,1 +1,6 @@
 jsonpickle>=3.0.0
+streamlit
+plotly
+pandas
+numpy
+scipy
