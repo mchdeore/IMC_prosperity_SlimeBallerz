@@ -214,3 +214,6 @@ analysis/sweep_outputs/
 
 # macOS
 .DS_Store
+
+# Regenerable backtest log artifacts (74MB+, recreated by test scripts)
+results/primo_exploration/logs/
