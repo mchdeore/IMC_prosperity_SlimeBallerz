@@ -208,3 +208,6 @@ __marimo__/
 
 # Spy algorithm parsed output
 output/
+
+# Regenerated sweep CSVs (tools/sweep_round1.py)
+analysis/sweep_outputs/

@@ -1,6 +1,8 @@
-jsonpickle>=3.0.0
+jsonpickle>=4.0.2
 streamlit
 plotly
 pandas
 numpy
 scipy
+# IMC Prosperity 4 backtester (https://github.com/nabayansaha/imc-prosperity-4-backtester)
+prosperity4btest>=1.0.1

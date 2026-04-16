@@ -1,0 +1,3 @@
+[submodule "third_party/imc-prosperity-4-backtester"]
+	path = third_party/imc-prosperity-4-backtester
+	url = https://github.com/nabayansaha/imc-prosperity-4-backtester.git

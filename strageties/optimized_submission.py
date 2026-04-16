@@ -1,232 +1,70 @@
 """
-Prosperity 4 — Parameterized Strategy Sweep
-=============================================
-Highly parameterized version of the Merged_checkpoint_1 strategy.
-Each product has its own config array and selector so you can sweep
-them independently and isolate results.
+Prosperity 4 — Optimized submission (fixed parameters)
+======================================================
+Same strategy logic as strageties/sweep_submission.py (4-phase MM per product),
+with **frozen** configs chosen from the round-1 `sweep_submission` grid backtests:
 
-Set ACTIVE to control which product(s) trade:
-  "ACO"  — only ASH_COATED_OSMIUM trades, IPR sends no orders
-  "IPR"  — only INTARIAN_PEPPER_ROOT trades, ACO sends no orders
-  "BOTH" — both trade with their respective configs
+  - ACO: index **2** — `min_take_edge=1`, `maker_mode=join`, else baseline.
+  - IPR: index **33** — `slope=0.003`, else baseline (Stage A default: edge 1, improve_1).
 
-Architecture: 4-phase market maker (take positive-EV, take flatten,
-make, soft-cap pressure) per product.
+Both products trade (`ACTIVE=BOTH`). Re-validate on new data before competing;
+high `slope` was dominant on the bundled three-day sample but may overfit.
 
-ACO stages:                          IPR stages:
-  A (0-7):   Edge vs fill             A (0-7):   Edge vs fill
-  B (8-12):  Passive size             B (8-12):  Passive size
-  C (13-21): Inventory control        C (13-21): Inventory control
-  D (22-26): EMA alpha                D (22-25): Bid/ask skew
-  E (27-29): improve_if_wide          E (26-28): improve_if_wide
-  (IPR: indices 29-33 sweep slope; 34-38 sweep quote_bias_ticks; baseline slope 0.001)
-
-Submit this file directly to the IMC Prosperity platform.
-
-Optional env vars (local backtests only; unset on the official server): SWEEP_ACTIVE,
-SWEEP_ACO_CONFIG_ID, SWEEP_IPR_CONFIG_ID — see tools/sweep_round1.py.
+Submit this file as your algorithm module (same `Trader` API as the guide).
 """
-
-# ═══════════════════════════════════════════════════════════════════════
-# SWEEP CONTROLS — change these to switch what you're testing
-# ═══════════════════════════════════════════════════════════════════════
-ACTIVE = "BOTH"           # "ACO" | "IPR" | "BOTH"
-ACO_CONFIG_ID = 3         # index into ACO_CONFIGS (3 = baseline)
-IPR_CONFIG_ID = 3         # index into IPR_CONFIGS (3 = baseline)
-# ═══════════════════════════════════════════════════════════════════════
 
 from datamodel import OrderDepth, TradingState, Order
 from typing import Dict, List, Optional
 import json
 import math
-import os
 
 # ── Product names ─────────────────────────────────────────────────────
 ACO = "ASH_COATED_OSMIUM"
 IPR = "INTARIAN_PEPPER_ROOT"
 
-# ── Baselines (reproduce Merged_checkpoint_1 behavior exactly) ───────
-ACO_BASELINE = {
-    "position_limit": 80,
-    "soft_cap":       60,
-    "make_portion":   0.8,
-    "anchor":         10_000,
-    "clamp_band":     20,
-    "ema_alpha":      0.25,
-    "min_take_edge":  1,
-    "maker_mode":     "improve_1",   # "join" | "improve_1" | "improve_if_wide"
-    "skew_strength":  0,             # ticks of inventory-skew on maker quotes
-    "size_haircut":   1.0,           # same-side volume *= max(0, 1 - pressure*hc)
-    "spread_threshold": 3,           # for improve_if_wide mode
-    "pressure_mode":  "symmetric",   # "symmetric" | "long_bias"
-    "bid_frac":       0.5,           # 0.5 = symmetric volume
-    "ask_frac":       0.5,
-    "quote_bias_ticks": 0,          # shift bid/ask maker prices after fair logic (+ = quote higher)
-}
+# Indices in sweep_submission.ACO_CONFIGS / IPR_CONFIGS (documentation only)
+SOURCE_SWEEP_ACO_IDX = 2
+SOURCE_SWEEP_IPR_IDX = 33
 
-IPR_BASELINE = {
+ACO_CONFIG_ID = SOURCE_SWEEP_ACO_IDX
+IPR_CONFIG_ID = SOURCE_SWEEP_IPR_IDX
+ACTIVE = "BOTH"
+
+# Merged dicts = baseline + sweep row (see sweep_submission.py for stage meanings)
+ACO_CFG = {
     "position_limit": 80,
-    "soft_cap":       75,
-    "make_portion":   0.9,
-    "min_take_edge":  1,
-    "slope":          0.001,  # Merged_checkpoint_1 IPR_SLOPE (not swept)
-    "bid_frac":       0.70,
-    "ask_frac":       0.30,
-    "maker_mode":     "improve_1",
-    "skew_strength":  0,
-    "size_haircut":   1.0,
+    "soft_cap": 60,
+    "make_portion": 0.8,
+    "anchor": 10_000,
+    "clamp_band": 20,
+    "ema_alpha": 0.25,
+    "min_take_edge": 1,
+    "maker_mode": "join",
+    "skew_strength": 0,
+    "size_haircut": 1.0,
     "spread_threshold": 3,
-    "pressure_mode":  "long_bias",
+    "pressure_mode": "symmetric",
+    "bid_frac": 0.5,
+    "ask_frac": 0.5,
     "quote_bias_ticks": 0,
 }
 
-# ═══════════════════════════════════════════════════════════════════════
-# ACO PARAMETER SWEEP CONFIGS
-# Each entry: dict of overrides merged onto ACO_BASELINE.
-# ═══════════════════════════════════════════════════════════════════════
-ACO_CONFIGS = [
-    # ── Stage A: Edge vs Fill (0–7) ──────────────────────────────────
-    # min_take_edge [0,1,2,3] x maker_mode [join, improve_1]
-    {"min_take_edge": 0, "maker_mode": "join"},       # 0
-    {"min_take_edge": 0, "maker_mode": "improve_1"},  # 1
-    {"min_take_edge": 1, "maker_mode": "join"},        # 2
-    {"min_take_edge": 1, "maker_mode": "improve_1"},   # 3  <- baseline
-    {"min_take_edge": 2, "maker_mode": "join"},        # 4
-    {"min_take_edge": 2, "maker_mode": "improve_1"},   # 5
-    {"min_take_edge": 3, "maker_mode": "join"},        # 6
-    {"min_take_edge": 3, "maker_mode": "improve_1"},   # 7
+IPR_CFG = {
+    "position_limit": 80,
+    "soft_cap": 75,
+    "make_portion": 0.9,
+    "min_take_edge": 1,
+    "slope": 0.003,
+    "bid_frac": 0.70,
+    "ask_frac": 0.30,
+    "maker_mode": "improve_1",
+    "skew_strength": 0,
+    "size_haircut": 1.0,
+    "spread_threshold": 3,
+    "pressure_mode": "long_bias",
+    "quote_bias_ticks": 0,
+}
 
-    # ── Stage B: Passive Size (8–12) ─────────────────────────────────
-    {"make_portion": 0.4},   # 8
-    {"make_portion": 0.6},   # 9
-    {"make_portion": 0.8},   # 10  <- baseline
-    {"make_portion": 0.9},   # 11
-    {"make_portion": 1.0},   # 12
-
-    # ── Stage C: Inventory Control (13–21) ───────────────────────────
-    # soft_cap [40, 50, 60] x skew_strength [0, 1, 2]
-    {"soft_cap": 40, "skew_strength": 0},  # 13
-    {"soft_cap": 40, "skew_strength": 1},  # 14
-    {"soft_cap": 40, "skew_strength": 2},  # 15
-    {"soft_cap": 50, "skew_strength": 0},  # 16
-    {"soft_cap": 50, "skew_strength": 1},  # 17
-    {"soft_cap": 50, "skew_strength": 2},  # 18
-    {"soft_cap": 60, "skew_strength": 0},  # 19  <- baseline soft_cap
-    {"soft_cap": 60, "skew_strength": 1},  # 20
-    {"soft_cap": 60, "skew_strength": 2},  # 21
-
-    # ── Stage D: EMA Alpha (22–26) ───────────────────────────────────
-    {"ema_alpha": 0.10},  # 22
-    {"ema_alpha": 0.20},  # 23
-    {"ema_alpha": 0.25},  # 24  <- baseline
-    {"ema_alpha": 0.35},  # 25
-    {"ema_alpha": 0.50},  # 26
-
-    # ── Stage E: Conditional Maker Aggression (27–29) ────────────────
-    {"maker_mode": "improve_if_wide", "spread_threshold": 3},  # 27
-    {"maker_mode": "improve_if_wide", "spread_threshold": 5},  # 28
-    {"maker_mode": "improve_if_wide", "spread_threshold": 8},  # 29
-]
-
-# ═══════════════════════════════════════════════════════════════════════
-# IPR PARAMETER SWEEP CONFIGS
-# Each entry: dict of overrides merged onto IPR_BASELINE.
-# ═══════════════════════════════════════════════════════════════════════
-IPR_CONFIGS = [
-    # ── Stage A: Edge vs Fill (0–7) ──────────────────────────────────
-    # min_take_edge [0,1,2,3] x maker_mode [join, improve_1]
-    {"min_take_edge": 0, "maker_mode": "join"},       # 0
-    {"min_take_edge": 0, "maker_mode": "improve_1"},  # 1
-    {"min_take_edge": 1, "maker_mode": "join"},        # 2
-    {"min_take_edge": 1, "maker_mode": "improve_1"},   # 3  <- baseline
-    {"min_take_edge": 2, "maker_mode": "join"},        # 4
-    {"min_take_edge": 2, "maker_mode": "improve_1"},   # 5
-    {"min_take_edge": 3, "maker_mode": "join"},        # 6
-    {"min_take_edge": 3, "maker_mode": "improve_1"},   # 7
-
-    # ── Stage B: Passive Size (8–12) ─────────────────────────────────
-    {"make_portion": 0.4},   # 8
-    {"make_portion": 0.6},   # 9
-    {"make_portion": 0.8},   # 10
-    {"make_portion": 0.9},   # 11  <- baseline
-    {"make_portion": 1.0},   # 12
-
-    # ── Stage C: Inventory Control (13–21) ───────────────────────────
-    # soft_cap [45, 55, 65, 75] x skew_strength [0, 1, 2]
-    {"soft_cap": 45, "skew_strength": 0},  # 13
-    {"soft_cap": 45, "skew_strength": 1},  # 14
-    {"soft_cap": 45, "skew_strength": 2},  # 15
-    {"soft_cap": 55, "skew_strength": 0},  # 16
-    {"soft_cap": 55, "skew_strength": 1},  # 17
-    {"soft_cap": 55, "skew_strength": 2},  # 18
-    {"soft_cap": 65, "skew_strength": 0},  # 19
-    {"soft_cap": 65, "skew_strength": 1},  # 20
-    {"soft_cap": 65, "skew_strength": 2},  # 21
-
-    # ── Stage D: Bid/Ask Skew (22–25) ────────────────────────────────
-    {"bid_frac": 0.50, "ask_frac": 0.50},  # 22
-    {"bid_frac": 0.60, "ask_frac": 0.40},  # 23
-    {"bid_frac": 0.70, "ask_frac": 0.30},  # 24  <- baseline
-    {"bid_frac": 0.80, "ask_frac": 0.20},  # 25
-
-    # ── Stage E: Conditional Maker Aggression (26–28) ────────────────
-    {"maker_mode": "improve_if_wide", "spread_threshold": 3},  # 26
-    {"maker_mode": "improve_if_wide", "spread_threshold": 5},  # 27
-    {"maker_mode": "improve_if_wide", "spread_threshold": 8},  # 28
-
-    # ── Stage F: IPR fair drift / slope (29–33) ───────────────────────
-    {"slope": 0.0},
-    {"slope": 0.0005},
-    {"slope": 0.001},
-    {"slope": 0.002},
-    {"slope": 0.003},
-
-    # ── Stage G: Quote price bias ticks (34–38) ─────────────────────
-    {"quote_bias_ticks": -2},
-    {"quote_bias_ticks": -1},
-    {"quote_bias_ticks": 1},
-    {"quote_bias_ticks": 2},
-    {"quote_bias_ticks": 3},
-]
-
-
-def _apply_sweep_env_overrides() -> None:
-    """
-    Optional env vars for local / batch backtests only (tools/sweep_round1.py).
-    Not set in the official submission environment — defaults above apply there.
-    """
-    global ACTIVE, ACO_CONFIG_ID, IPR_CONFIG_ID
-
-    raw_active = os.environ.get("SWEEP_ACTIVE")
-    if raw_active is not None:
-        v = raw_active.strip().upper()
-        if v not in ("ACO", "IPR", "BOTH"):
-            raise ValueError(f"SWEEP_ACTIVE must be ACO, IPR, or BOTH, got {raw_active!r}")
-        ACTIVE = v
-
-    def _parse_config_id(name: str, n: int) -> Optional[int]:
-        raw = os.environ.get(name)
-        if raw is None:
-            return None
-        try:
-            idx = int(raw.strip())
-        except ValueError as e:
-            raise ValueError(f"{name} must be an integer, got {raw!r}") from e
-        return max(0, min(n - 1, idx))
-
-    aco = _parse_config_id("SWEEP_ACO_CONFIG_ID", len(ACO_CONFIGS))
-    if aco is not None:
-        ACO_CONFIG_ID = aco
-    ipr = _parse_config_id("SWEEP_IPR_CONFIG_ID", len(IPR_CONFIGS))
-    if ipr is not None:
-        IPR_CONFIG_ID = ipr
-
-
-_apply_sweep_env_overrides()
-
-# ── Resolve active configs ───────────────────────────────────────────
-ACO_CFG = {**ACO_BASELINE, **ACO_CONFIGS[ACO_CONFIG_ID]}
-IPR_CFG = {**IPR_BASELINE, **IPR_CONFIGS[IPR_CONFIG_ID]}
 ACO_ACTIVE = ACTIVE in ("ACO", "BOTH")
 IPR_ACTIVE = ACTIVE in ("IPR", "BOTH")
 
@@ -715,31 +553,11 @@ if __name__ == "__main__":
     VALID_MODES = ("join", "improve_1", "improve_if_wide")
 
     print("=" * 70)
-    print(f"  SWEEP SUBMISSION SMOKE TEST")
-    print(f"  ACO_CONFIGS: {len(ACO_CONFIGS)}  |  IPR_CONFIGS: {len(IPR_CONFIGS)}")
-    print(f"  Active: {ACTIVE}  ACO_CONFIG_ID={ACO_CONFIG_ID}  IPR_CONFIG_ID={IPR_CONFIG_ID}")
+    print("  OPTIMIZED SUBMISSION SMOKE TEST")
+    print(f"  Active: {ACTIVE}  source ACO idx={SOURCE_SWEEP_ACO_IDX}  IPR idx={SOURCE_SWEEP_IPR_IDX}")
     print("=" * 70)
 
-    # Validate every config resolves without missing keys
-    print("\n--- Validating ACO configs ---")
-    for i, overrides in enumerate(ACO_CONFIGS):
-        cfg = {**ACO_BASELINE, **overrides}
-        for key in ACO_BASELINE:
-            assert key in cfg, f"ACO config {i}: missing '{key}'"
-        assert cfg["maker_mode"] in VALID_MODES, (
-            f"ACO config {i}: bad maker_mode '{cfg['maker_mode']}'"
-        )
-    print(f"  All {len(ACO_CONFIGS)} ACO configs OK")
-
-    print("--- Validating IPR configs ---")
-    for i, overrides in enumerate(IPR_CONFIGS):
-        cfg = {**IPR_BASELINE, **overrides}
-        for key in IPR_BASELINE:
-            assert key in cfg, f"IPR config {i}: missing '{key}'"
-        assert cfg["maker_mode"] in VALID_MODES, (
-            f"IPR config {i}: bad maker_mode '{cfg['maker_mode']}'"
-        )
-    print(f"  All {len(IPR_CONFIGS)} IPR configs OK")
+    assert ACO_CFG["maker_mode"] in VALID_MODES and IPR_CFG["maker_mode"] in VALID_MODES
 
     # -- Test BOTH mode --
     print(f"\n=== BOTH mode: 3 ticks ===")
