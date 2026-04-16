@@ -1,0 +1,13 @@
+cfg_id,day,ok,aco_pnl,total_pnl,cfg_json,make_offset,min_take_edge,maker_mode,make_portion,soft_cap,skew_strength,ema_alpha
+0,-2,True,3042.0,3042.0,"{""ema_alpha"": 0.25, ""make_offset"": -1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",-1,1,join,0.8,60,0,0.25
+0,-1,True,3567.0,3567.0,"{""ema_alpha"": 0.25, ""make_offset"": -1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",-1,1,join,0.8,60,0,0.25
+1,-2,True,19980.0,19980.0,"{""ema_alpha"": 0.25, ""make_offset"": 0, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",0,1,join,0.8,60,0,0.25
+0,0,True,4261.0,4261.0,"{""ema_alpha"": 0.25, ""make_offset"": -1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",-1,1,join,0.8,60,0,0.25
+2,-2,True,17881.0,17881.0,"{""ema_alpha"": 0.25, ""make_offset"": 1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",1,1,join,0.8,60,0,0.25
+2,-1,True,19302.0,19302.0,"{""ema_alpha"": 0.25, ""make_offset"": 1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",1,1,join,0.8,60,0,0.25
+1,-1,True,21400.0,21400.0,"{""ema_alpha"": 0.25, ""make_offset"": 0, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",0,1,join,0.8,60,0,0.25
+1,0,True,20062.0,20062.0,"{""ema_alpha"": 0.25, ""make_offset"": 0, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",0,1,join,0.8,60,0,0.25
+3,-1,True,17223.0,17223.0,"{""ema_alpha"": 0.25, ""make_offset"": 2, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",2,1,join,0.8,60,0,0.25
+3,0,True,16113.0,16113.0,"{""ema_alpha"": 0.25, ""make_offset"": 2, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",2,1,join,0.8,60,0,0.25
+2,0,True,18079.0,18079.0,"{""ema_alpha"": 0.25, ""make_offset"": 1, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",1,1,join,0.8,60,0,0.25
+3,-2,True,15799.0,15799.0,"{""ema_alpha"": 0.25, ""make_offset"": 2, ""make_portion"": 0.8, ""maker_mode"": ""join"", ""min_take_edge"": 1, ""skew_strength"": 0, ""soft_cap"": 60}",2,1,join,0.8,60,0,0.25

@@ -1,0 +1,218 @@
+=======================================================================
+PRIMO EXPLORATION - KEY FINDINGS
+=======================================================================
+
+Summary of 13 exploratory tests run against primo_v3, using the sandbox
+trader primo_explorer.py (primo_v3 with env-var config overrides). All
+numbers are 3-day totals on training days -2, -1, 0, under the realistic
+--match-trades worse fill model unless noted.
+
+primo_v3 baseline: ~284,000 / 3 days  (~94,600 / day)
+Proposed primo_v4: ~292,300 / 3 days  (~97,400 / day)
+                   ~3% improvement, +2,780 per day
+
+
+-----------------------------------------------------------------------
+BIGGEST WINS (each worth real PnL)
+-----------------------------------------------------------------------
+
+1) long_take_edge = -5 replicates the slope=0.003 "cheat" honestly
+   [test_09_long_take_edge.py]
+   - Setting long_take_edge = -5 on IPR's ask side captures the same
+     79k/day that 176355's slope=0.003 trick earns - WITHOUT cheating
+     on fair value.
+   - +2,000 per day expected upgrade.
+   - Mechanism: we aggressively buy asks priced up to fair+5 instead
+     of only buying when ask < fair-1. Slope stays honest (0.001),
+     so the strategy isn't fragile to drift miscalibration.
+
+2) Book imbalance has R^2 ~ 0.30 at short horizons
+   [test_05_book_imbalance.py]
+   - bid_vol_L1 / (bid_vol + ask_vol) predicts mid-price changes at
+     horizons 5, 20, 100 ticks with Pearson r = 0.55.
+   - Decile response is monotonic: lowest bucket -> neg return,
+     highest bucket -> pos return.
+   - Primo uses ZERO imbalance information. This is a major untapped
+     signal deserving its own iteration (primo_v5).
+
+3) IPR is 93% drift capture, only 7% spread capture
+   [test_07_pnl_attribution.py]
+   - Per-fill edge at moment of fill sums to ~17k/3d.
+   - Actual IPR PnL is ~232k/3d.
+   - The 215k gap is drift realization on held inventory.
+   - Implications:
+       * Getting LONG fast beats getting LONG cleanly
+       * Maker placement tweaks have low ceiling (confirmed by
+         tests 10 and 11 both rejected)
+       * bid_frac=0.70 + long_bias pressure are the dominant levers
+
+4) ACO parameter sweep identified free +800/day
+   [test_03_aco_sweep.py]
+   - soft_cap=80 (was 75)       => +150/day
+   - ema_alpha_new=0.05 (was 0.10) => +200/day
+   - fair_levels=[2,3] (was [1,2,3]) => +400/day (L1 is noisier)
+   - Pure risk-reduction improvements, no downside.
+
+
+-----------------------------------------------------------------------
+ROBUSTNESS FINDINGS (important for live deployment)
+-----------------------------------------------------------------------
+
+5) primo_v3 is fill-model-robust
+   [test_01_match_mode_robustness.py]
+   - PnL under --match-trades all and worse is IDENTICAL (within 1%).
+   - Unlike 176355 which loses ~15k/day under "worse".
+   - primo's default is not leaning on backtester artifacts.
+
+6) Slope too LOW is catastrophic; slope too HIGH is fine
+   [test_12_slope_stress.py]
+   - If strategy slope < 0.70 * real_drift, PnL flips to -79k/day.
+   - If strategy slope > real_drift, strategy still wins (aggressive
+     fair drives take_positive to saturate position).
+   - Recommendation: slope=0.0012 (20% above training) is a defensive
+     ceiling. Never set below 0.001.
+
+7) IPR-B fallback is genuinely strong
+   [test_08_ipr_b_solo.py]
+   - Force-mode B across 64 configs: median 75k/day, best 77k/day,
+     worst 70k/day. Essentially matches IPR-A's 77k/day.
+   - The momentum strategy is a GRACEFUL DEGRADATION fallback,
+     not an emergency brake. If bail fires live we still earn ~77k.
+
+8) No adverse selection on either product
+   [test_04_adverse_selection.py]
+   - ACO: both bid and ask fills show +7 tick mean profit at all
+     horizons (5, 20, 100, 500). Fills are clean.
+   - IPR: bid fills gain +53 over 500 ticks (drift capture).
+          Ask fills lose -48 (fighting drift).
+   - Confirms asymmetric bid-heavy strategy is exactly correct.
+
+9) Hold-time distributions match design
+   [test_06_hold_time.py]
+   - ACO: median 243-tick holds (~2.4% of day), 0% held 1000+ ticks.
+     Fast spread churn. Healthy.
+   - IPR: median 807-tick holds (~8% of day), 19% held 1000+ ticks.
+     Long drift-capture holds. Healthy.
+   - ACO ends each day at +64 to +79 long (not flat). Symmetric
+     pressure not fully clearing inventory. Minor concern.
+
+
+-----------------------------------------------------------------------
+REJECTED IDEAS (things that did NOT help)
+-----------------------------------------------------------------------
+
+10) Multi-level maker quotes
+    [test_10_multilevel_maker.py]
+    - Posting layered quotes at L1 + L2/L3/L5 did not improve either
+      product. Single-level beat all tiered configs.
+    - Splitting volume reduces L1 fill rate without material capture
+      from the deeper layer.
+
+11) Time-based aggression ramp
+    [test_11_time_aggression.py]
+    - Ramping min_take_edge from +1 to -2 over the day loses
+      15-58k/3d on IPR.
+    - Root cause: ramp reduces edge SYMMETRICALLY, so late-day we
+      ALSO sell at unfavorable prices, building short inventory
+      against drift.
+    - Asymmetric aggression via long_take_edge (test 9) is strictly
+      better than time-symmetric edge reduction.
+
+12) Slope fine-tuning plateaus
+    [test_02_slope_sweep.py]
+    - slope=0.0015 hits PnL saturation at 79k/day.
+    - Going higher (0.002, 0.0025, 0.003) offers no additional PnL.
+    - The saturation ceiling is reached via long_take_edge instead,
+      without the slope-fragility downside.
+
+
+-----------------------------------------------------------------------
+PROPOSED PRIMO_V4 CONFIG (drop-in change to primo_v3)
+-----------------------------------------------------------------------
+
+ACO_CFG changes:
+    soft_cap          75 -> 80      (test 03)
+    ema_alpha_new     0.10 -> 0.05  (test 03)
+    fair_levels       [1,2,3] -> [2,3]  (test 03)
+
+IPR_A_CFG changes:
+    slope             0.001 -> 0.0012  (tests 02, 12)
+    long_take_edge    None  -> -5     (test 09) <-- biggest win
+    quote_bias_ticks  3     -> 2      (paired with long_take_edge)
+
+IPR_B_CFG changes (fallback-only; minor):
+    roc_window        20   -> 50
+    skew_per_roc_unit 1000 -> 5000
+    max_skew_ticks    3    -> 5
+
+Measured head-to-head (--match-trades worse):
+    Day -2:  92,450 -> 95,309  (+2,859)
+    Day -1:  96,041 -> 98,669  (+2,628)
+    Day  0:  95,501 -> 98,350  (+2,849)
+    Total:  284,001 -> 292,328 (+8,327)
+
+
+-----------------------------------------------------------------------
+CONSERVATIVE DIAL-DOWN (for initial live deployment)
+-----------------------------------------------------------------------
+
+If live drift is uncertain, concede ~1k/day of upside for safety:
+
+    long_take_edge    -5 -> -2      (less aggressive accumulation)
+    slope             0.0012 -> 0.001  (honest training slope)
+
+Keep all ACO changes (pure robustness, no downside).
+
+After day 1 of live trading confirms drift >= 0.001, upgrade to the
+full v4 config.
+
+
+-----------------------------------------------------------------------
+LIVE-TRADING RISK ASSESSMENT
+-----------------------------------------------------------------------
+
+Safe:
+  * Fair value is honest (slope 0.0012 is 20% above training drift)
+  * long_take_edge=-5 is bounded (max 5 ticks sunk per lot, 400 total)
+  * ACO changes reduce noise, no directional risk
+  * IPR-B fallback validated (test 08) - degrades to 77k/day not 0
+
+Risky:
+  * slope=0.0012 still fails if live drift < 0.0008 (losses of -79k/day)
+  * long_take_edge=-5 accelerates position building; if drift reverses
+    early we're deeper long at the reversal than primo_v3 would be
+  * ACO EOD position stays high (+64 to +79 long) - exposure to
+    late-day ACO news events, but no adverse drift observed
+  * imbalance signal (test 05, R^2=0.30) unexploited; competitors
+    using it would outperform us
+
+
+-----------------------------------------------------------------------
+FILE INVENTORY
+-----------------------------------------------------------------------
+
+Scripts (in scripts/):
+  _backtest_helpers.py          shared sweep infrastructure
+  _log_parser.py                backtester log parser
+  test_01_match_mode_robustness.py
+  test_02_slope_sweep.py
+  test_03_aco_sweep.py
+  test_04_adverse_selection.py
+  test_05_book_imbalance.py
+  test_06_hold_time.py
+  test_07_pnl_attribution.py
+  test_08_ipr_b_solo.py
+  test_09_long_take_edge.py
+  test_10_multilevel_maker.py
+  test_11_time_aggression.py
+  test_12_slope_stress.py
+  test_13_eod_position.py
+
+Strategies (in strageties/):
+  primo_v3.py         untouched submission artifact
+  primo_explorer.py   sandbox trader with env-var config overrides
+  primo_final.py      simplest possible writeup with best params hardcoded
+
+Results (in results/primo_exploration/):
+  test_*.csv          per-test output CSVs
+  SYNTHESIS.md        full markdown writeup of findings
