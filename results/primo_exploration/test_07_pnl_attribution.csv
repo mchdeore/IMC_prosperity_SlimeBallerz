@@ -1,7 +1,0 @@
-product,fill_phase,n_fills,total_qty,total_edge,mean_edge_per_share
-ACO,flatten,16,109,57.8,0.51
-ACO,make,1169,6046,43009.9,7.08
-ACO,take_pos,618,4155,8678.8,2.09
-IPR,flatten,4,13,60.7,4.62
-IPR,make,286,1279,2262.9,1.76
-IPR,take_pos,772,4046,14920.6,3.64

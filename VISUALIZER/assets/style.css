@@ -1,0 +1,94 @@
+/* Bloomberg / Fincept-inspired dark theme */
+
+body, .fincept-container {
+    background: #0b0b0b !important;
+    color: #e0e0e0;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+.fincept-container {
+    padding: 1rem 1.2rem 1.5rem 1.2rem;
+}
+
+.fincept-header {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-size: 1.05rem;
+    padding: 0.25rem 0 0.6rem 0;
+    border-bottom: 1px solid rgba(255, 171, 64, 0.35);
+    margin-bottom: 0.8rem;
+}
+.fincept-brand-a { color: #ffab40; }
+.fincept-brand-b { color: #e0e0e0; }
+.fincept-brand-sub { color: #888; margin-left: 0.6rem; font-weight: 400; }
+
+.fincept-label {
+    color: #888;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.15rem;
+}
+
+.fincept-dropdown .Select-control,
+.fincept-dropdown .Select-menu-outer,
+.fincept-dropdown .Select-value,
+.fincept-dropdown .Select-input,
+.fincept-dropdown .Select-placeholder {
+    background-color: #1a1a1a !important;
+    color: #e0e0e0 !important;
+    border-color: #333 !important;
+}
+
+.fincept-toggles label {
+    margin-right: 0.9rem;
+    color: #c0c0c0;
+    font-size: 0.85rem;
+}
+.fincept-toggles input {
+    accent-color: #ffab40;
+    margin-right: 0.25rem;
+}
+
+.fincept-slider-wrap {
+    margin: 0.6rem 0 0.4rem 0;
+    padding: 0 0.4rem;
+}
+
+.fincept-kpi-row {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.6rem 0 0.8rem 0;
+    flex-wrap: wrap;
+}
+.fincept-kpi {
+    flex: 1 1 160px;
+    background: #141414;
+    border: 1px solid #262626;
+    border-left: 3px solid #ffab40;
+    padding: 0.5rem 0.7rem;
+    min-width: 140px;
+}
+.fincept-kpi-title {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    color: #888;
+    text-transform: uppercase;
+}
+.fincept-kpi-value {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin-top: 0.1rem;
+}
+.fincept-kpi-sub {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.05rem;
+}
+
+.fincept-footer {
+    margin-top: 0.6rem;
+    font-size: 0.7rem;
+    color: #666;
+    text-align: right;
+}

@@ -209,11 +209,13 @@ __marimo__/
 # Spy algorithm parsed output
 output/
 
-# Regenerated sweep CSVs (tools/sweep_round1.py)
-analysis/sweep_outputs/
-
 # macOS
 .DS_Store
 
 # Regenerable backtest log artifacts (74MB+, recreated by test scripts)
 results/primo_exploration/logs/
+
+# Local backtest outputs (tick CSV, manifests); keep LOGS/.gitkeep only
+LOGS/*.csv
+LOGS/*.source_manifest.json
+tmp_restore_visualizer.py

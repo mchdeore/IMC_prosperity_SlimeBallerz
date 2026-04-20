@@ -1,0 +1,1 @@
+"""SlimeBallerz visualizer package."""
