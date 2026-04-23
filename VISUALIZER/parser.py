@@ -112,14 +112,36 @@ def _parse_activities_csv(csv_text: str) -> pd.DataFrame:
         "ask_price_1": "ask1", "ask_volume_1": "askv1",
         "ask_price_2": "ask2", "ask_volume_2": "askv2",
         "ask_price_3": "ask3", "ask_volume_3": "askv3",
-        "mid_price": "mid",
+        "mid_price": "mid_raw",
         "profit_and_loss": "pnl",
     }
     df = df.rename(columns=rename)
     num_cols = [c for c in df.columns if c not in ("product",)]
     for col in num_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.sort_values(["product", "timestamp"]).reset_index(drop=True)
+
+    # Robust mid: avoids the spikes/gaps you get when one (or both) sides
+    # of the book is empty for a tick.
+    #   - both sides present  -> (bid + ask) / 2
+    #   - only one side       -> that side's best price
+    #   - both sides missing  -> forward-fill last good mid
+    # We keep the grader-reported number in ``mid_raw`` for reference.
+    df = df.sort_values(["product", "timestamp"]).reset_index(drop=True)
+    bid1 = df["bid1"] if "bid1" in df.columns else None
+    ask1 = df["ask1"] if "ask1" in df.columns else None
+    if bid1 is not None and ask1 is not None:
+        mid = (bid1 + ask1) / 2.0
+        mid = mid.where(mid.notna(), bid1)
+        mid = mid.where(mid.notna(), ask1)
+    elif bid1 is not None:
+        mid = bid1.astype(float)
+    elif ask1 is not None:
+        mid = ask1.astype(float)
+    else:
+        mid = pd.Series([float("nan")] * len(df))
+    df["mid"] = mid
+    df["mid"] = df.groupby("product")["mid"].ffill()
+    return df
 
 
 def _normalize_trades(raw: list[dict]) -> pd.DataFrame:
@@ -162,7 +184,15 @@ def _quotes_from_lambda(sandbox_objs) -> tuple[pd.DataFrame, pd.DataFrame]:
             continue
         if not isinstance(data, dict):
             continue
-        ts = data.get("t", obj.get("timestamp"))
+        # The backtester writes each sandbox object with an outer
+        # ``timestamp`` that carries cross-day offsets (day 0 -> 0-999900,
+        # day 1 -> 1,000,000-1,999,900, ...). The embedded ``t`` inside
+        # ``lambdaLog`` is the trader's per-day ``state.timestamp`` which
+        # restarts at 0 each day. Always prefer the outer timestamp so
+        # multi-day logs don't collapse every day's quotes onto day 0.
+        ts = obj.get("timestamp")
+        if ts is None:
+            ts = data.get("t")
         orders = data.get("orders") or {}
         for product, order_list in orders.items():
             for entry in order_list or []:
@@ -195,7 +225,19 @@ def _quotes_from_lambda(sandbox_objs) -> tuple[pd.DataFrame, pd.DataFrame]:
     return quotes, fairs
 
 
+DAY_TICKS = 1_000_000  # each Prosperity day is 1M ticks; sandbox resets between days
+
+
 def _position_from_fills(trades: pd.DataFrame) -> pd.DataFrame:
+    """Cumulative position per product, reset at every day boundary.
+
+    Each day is an independent sandbox on the grading server, so
+    ``state.position`` that the trader sees restarts at 0 at the start of
+    every ``DAY_TICKS`` window. Without this reset, a multi-day backtest
+    log (`--merge-pnl` / default sequential timestamps) produces a line
+    that appears to blow past +/-limit when in reality the trader stayed
+    within the cap every day.
+    """
     if trades.empty:
         return pd.DataFrame(columns=["timestamp", "product", "position"])
     own = trades[trades["source"].isin(("own_buy", "own_sell"))].copy()
@@ -203,8 +245,9 @@ def _position_from_fills(trades: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["timestamp", "product", "position"])
     signed = own["quantity"] * own["source"].map({"own_buy": 1, "own_sell": -1})
     own = own.assign(delta=signed)
-    own = own.sort_values(["product", "timestamp"])
-    own["position"] = own.groupby("product")["delta"].cumsum()
+    own["day"] = (own["timestamp"] // DAY_TICKS).astype(int)
+    own = own.sort_values(["product", "day", "timestamp"])
+    own["position"] = own.groupby(["product", "day"])["delta"].cumsum()
     return own[["timestamp", "product", "position"]].reset_index(drop=True)
 
 
@@ -329,9 +372,14 @@ def discover_sources(root: Path) -> list[dict]:
 
     data_dir = root / "DATA"
     if data_dir.exists():
-        for p in sorted(data_dir.glob("prices_*.csv")):
+        # Recurse so DATA/round1/, DATA/round2/, etc. are all picked up
+        # (the backtester expects a round<N>/ subdir layout, so the raw
+        # CSVs typically live one level deep).
+        for p in sorted(data_dir.rglob("prices_*.csv")):
+            rel = p.relative_to(data_dir)
+            pretty = rel.as_posix() if rel != Path(p.name) else p.name
             sources.append({
-                "label": f"DATA -  {p.name}",
+                "label": f"DATA -  {pretty}",
                 "value": f"data::{p}",
             })
     return sources

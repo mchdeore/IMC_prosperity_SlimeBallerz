@@ -50,10 +50,14 @@ body, .fincept-container {
     margin-right: 0.25rem;
 }
 
-.fincept-slider-wrap {
-    margin: 0.6rem 0 0.4rem 0;
-    padding: 0 0.4rem;
+.fincept-hint {
+    margin: 0.35rem 0 0.2rem 0;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: #666;
+    text-transform: lowercase;
 }
+
 
 .fincept-kpi-row {
     display: flex;
@@ -91,4 +95,131 @@ body, .fincept-container {
     font-size: 0.7rem;
     color: #666;
     text-align: right;
+}
+
+/* --- top-nav --- */
+.fincept-nav {
+    display: flex;
+    gap: 1rem;
+    padding: 0.2rem 0 0.6rem 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid #1f1f1f;
+}
+.fincept-nav-link {
+    color: #888 !important;
+    text-decoration: none !important;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.15rem;
+    border-bottom: 2px solid transparent;
+}
+.fincept-nav-link:hover {
+    color: #e0e0e0 !important;
+}
+.fincept-nav-active {
+    color: #ffab40 !important;
+    border-bottom: 2px solid #ffab40 !important;
+}
+
+.fincept-page {
+    margin-top: 0.4rem;
+}
+
+/* --- cointegration page --- */
+.fincept-coint-row {
+    margin-top: 0.3rem;
+}
+.fincept-run-btn {
+    background: #141414;
+    border: 1px solid #ffab40;
+    color: #ffab40;
+    padding: 0.35rem 1.1rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.12s ease, color 0.12s ease;
+    margin-top: 0.1rem;
+}
+.fincept-run-btn:hover {
+    background: #ffab40;
+    color: #0b0b0b;
+}
+.fincept-coint-verdict {
+    margin: 0.75rem 0 0.35rem 0;
+    padding: 0.5rem 0.8rem;
+    border-left: 3px solid #333;
+    background: #141414;
+    font-size: 0.9rem;
+}
+.fincept-coint-verdict-yes {
+    margin: 0.75rem 0 0.35rem 0;
+    padding: 0.5rem 0.8rem;
+    border-left: 3px solid #66bb6a;
+    background: rgba(102, 187, 106, 0.08);
+    font-size: 0.95rem;
+}
+.fincept-coint-verdict-no {
+    margin: 0.75rem 0 0.35rem 0;
+    padding: 0.5rem 0.8rem;
+    border-left: 3px solid #ef5350;
+    background: rgba(239, 83, 80, 0.08);
+    font-size: 0.95rem;
+}
+.fincept-coint-verdict-none {
+    margin: 0.75rem 0 0.35rem 0;
+    padding: 0.5rem 0.8rem;
+    border-left: 3px solid #444;
+    background: #141414;
+    color: #888;
+    font-size: 0.85rem;
+}
+.fincept-coint-headline {
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #e0e0e0;
+}
+.fincept-coint-sub {
+    color: #aaa;
+    font-size: 0.85rem;
+    margin-left: 0.4rem;
+}
+.fincept-coint-stats {
+    margin: 0.3rem 0 0.7rem 0;
+}
+.fincept-coint-table {
+    width: 100%;
+    max-width: 640px;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+.fincept-coint-table th {
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.25rem 0.6rem;
+    border-bottom: 1px solid #262626;
+    text-align: left;
+}
+.fincept-coint-table td {
+    padding: 0.25rem 0.6rem;
+    border-bottom: 1px solid #181818;
+}
+.fincept-coint-cell-label { color: #c0c0c0; }
+.fincept-coint-cell { color: #e0e0e0; font-variant-numeric: tabular-nums; }
+.fincept-coint-meta-row {
+    margin-top: 0.35rem;
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+}
+.fincept-coint-meta {
+    color: #ffab40;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
 }

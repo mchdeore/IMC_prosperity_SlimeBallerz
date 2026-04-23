@@ -70,7 +70,12 @@ class TickRecorder:
     def clear(self) -> None:
         self.rows.clear()
 
-    def record_tick(self, state: TradingState, orders: Dict[str, List[Order]]) -> None:
+    def record_tick(
+        self,
+        state: TradingState,
+        orders: Dict[str, List[Order]],
+        fair: Optional[Dict[str, float]] = None,
+    ) -> None:
         if self.auto_save_csv is not None and not self._manifest_written:
             self._manifest_written = True
             try:
@@ -83,8 +88,10 @@ class TickRecorder:
         rnd = _env_int("PROSPERITY4BT_ROUND")
         day = _env_int("PROSPERITY4BT_DAY")
         products = set(state.order_depths.keys()) | set(orders.keys())
+        fair = fair or {}
         for product in sorted(products):
             od_list = orders.get(product, [])
+            fair_val = fair.get(product)
             self.rows.append(
                 {
                     "round": rnd,
@@ -93,8 +100,47 @@ class TickRecorder:
                     "product": product,
                     "position": state.position.get(product, 0),
                     "quotes_json": json.dumps([[o.price, o.quantity] for o in od_list]),
+                    "fair_json": (
+                        "" if fair_val is None else json.dumps(float(fair_val))
+                    ),
                 }
             )
+
+    def record_and_emit(
+        self,
+        state: TradingState,
+        orders: Dict[str, List[Order]],
+        fair: Optional[Dict[str, float]] = None,
+        *,
+        sandbox_stdout: bool = True,
+    ) -> None:
+        """Record the tick AND print the sandbox ``lambdaLog`` payload.
+
+        Using this single call from a strategy's ``Trader.run`` makes any
+        strategy play nicely with the visualizer (fair line) and tick-CSV
+        workflows without the strategy hand-rolling the JSON print.
+
+        Pass ``fair={PRODUCT: price, ...}`` with the strategy's own
+        computed fair value(s); the visualizer will overlay them on the
+        matching product's chart.
+        """
+        self.record_tick(state, orders, fair=fair)
+
+        if not sandbox_stdout:
+            return
+
+        import sys
+
+        payload = {
+            "t": state.timestamp,
+            "orders": {
+                k: [[o.price, o.quantity] for o in v] for k, v in orders.items()
+            },
+        }
+        if fair:
+            payload["fair"] = {p: float(v) for p, v in fair.items()}
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
 
     def _atexit_write_csv(self) -> None:
         if not self.auto_save_csv or not self.rows:
@@ -106,7 +152,10 @@ class TickRecorder:
     def to_dataframe(self):
         import pandas as pd
 
-        cols = ["round", "day", "timestamp", "product", "position", "quotes_json"]
+        cols = [
+            "round", "day", "timestamp", "product",
+            "position", "quotes_json", "fair_json",
+        ]
         if not self.rows:
             return pd.DataFrame(columns=cols)
         return pd.DataFrame(self.rows)
